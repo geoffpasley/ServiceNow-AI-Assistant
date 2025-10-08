@@ -1,0 +1,33 @@
+version: "3.9"
+services:
+  suggester:
+    image: python:3.11-slim
+    container_name: ci-suggester
+    working_dir: /app
+    env_file: ./service.env
+    environment:
+      - PYTHONPATH=/app/code
+    volumes:
+      - ./:/app
+      - ./data:/app/data
+    command: >
+      bash -lc "pip install -r code/ci_suggester/requirements.txt &&
+                uvicorn code.ci_suggester.app:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+
+  etl:
+    image: python:3.11-slim
+    container_name: ci-suggester-etl
+    working_dir: /app
+    env_file: ./service.env
+    environment:
+      - PYTHONPATH=/app/code
+    volumes:
+      - ./:/app
+      - ./data:/app/data
+    entrypoint: bash -lc
+    command: >
+      "pip install -r code/ci_suggester/requirements.txt &&
+       python code/ci_suggester/etl.py &&
+       python code/ci_suggester/index_build.py"
