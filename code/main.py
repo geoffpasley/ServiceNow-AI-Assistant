@@ -23,6 +23,8 @@ def main():
     except:
         globe.error = True
         traceback.print_exc() 
+    
+    p = process.Process().run()
 
     # Run the main process(es) 
     while (globe.error == False):
