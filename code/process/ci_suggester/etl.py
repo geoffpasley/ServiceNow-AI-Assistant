@@ -8,16 +8,16 @@ class Process:
     def __init__(self):
         self.servicenow = serveicenow.API(max_retries=5, timeout=180)
         self.ci_table = globe.variable.get('ci_suggester', 'ci_table')
-        self.max_changes_per_ci = globe.variable.get('ci_suggester', 'max_changes_per_ci')
-        self.days_back = globe.variable.get('ci_suggester', 'days_back')
+        self.max_changes_per_ci = int(globe.variable.get('ci_suggester', 'max_changes_per_ci'))
+        self.days_back = int(globe.variable.get('ci_suggester', 'days_back'))
         self.data_dir = globe.variable.get('ci_suggester', 'data_dir')
-
+    
     def run(self):
         # Build encoded date string in SN format (UTC, naive string)
-        since_dt = datetime.now(timezone.utc) - timedelta(days=int(self.days_back))
+        since_dt = datetime.now(timezone.utc) - timedelta(days=self.days_back)
         since_str = since_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-        # 1) Pull CIs (using your encoded query style)
+        # 1) Pull CIs (using your encoded query)
         ci_eq = "active=true"
         ci_records = self.servicenow.GET_all_table_records(table=self.ci_table, encoded_query=ci_eq) or []
         globe.logger.entry(
@@ -35,11 +35,19 @@ class Process:
 
             # 2) Pull related changes (last N days)
             ch_eq = f"cmdb_ci={ci_id}^sys_created_on>={since_str}"
-            ch_records = self.servicenow.GET_all_table_records("change_request", ch_eq) or []
+            ch_fields = ["sys_id", "number", "cmdb_ci", "sys_created_on", "close_code", "u_caused_incident"]
+            ch_records = self.servicenow.GET_all_table_records(
+                table="change_request",
+                encoded_query=ch_eq,
+                fields=ch_fields
+            ) or []
 
-            total = len(ch_records)
-            success = sum(1 for c in ch_records if (c.get("close_code") or "").lower() == "successful")
-            caused_inc = sum(1 for c in ch_records if str(c.get("u_caused_incident", "false")).lower() in ("true", "1"))
+            # Latest change timestamp (string as returned by SN)
+            last_change = None
+            for c in ch_records:
+                ts = c.get("sys_created_on")
+                if ts and (last_change is None or ts > last_change):
+                    last_change = ts
 
             # Latest change timestamp (string as returned by SN)
             last_change = None
@@ -73,10 +81,10 @@ class Process:
                     "sys_id": ci_id,
                     "name": ci.get("name", ""),
                     "stats": {
-                        "total": total,
-                        "success": success,
-                        "caused_inc": caused_inc,
-                        "last_change": last_change  # keep as SN-formatted string
+                        "total": len(ch_records),
+                        "success": sum(1 for c in ch_records if (c.get("close_code") or "").lower() == "successful"),
+                        "caused_inc": sum(1 for c in ch_records if str(c.get("u_caused_incident","false")).lower() in ("true","1")),
+                        "last_change": last_change
                     }
                 }
             })
